@@ -47,17 +47,33 @@ jobs:
           # packages would never be saved. Cache them under our own key.
           cache: false
 
+      - name: Install GTK
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libgirepository1.0-dev
+
+      # Cached cgo objects go stale when Go, the C compiler or the GTK stack
+      # changes. An existing key is never re-saved, so fold those versions into
+      # the key or the job would rebuild gotk4 from scratch until go.sum moved.
+      - name: Fingerprint toolchain
+        id: toolchain
+        run: |
+          {
+            go env GOVERSION
+            gcc -dumpfullversion
+            pkg-config --modversion gtk4 glib-2.0 gobject-2.0 gio-2.0 \
+              gobject-introspection-1.0 pango cairo cairo-gobject \
+              gdk-pixbuf-2.0 graphene-1.0 graphene-gobject-1.0
+          } | tee /dev/stderr | sha256sum | cut -c1-16 | sed 's/^/hash=/' >> "$GITHUB_OUTPUT"
+
       - name: Cache Go build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-build-${{ runner.os }}-
-
-      - name: Install GTK
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libgirepository1.0-dev
+          key: go-build-${{ runner.os }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ steps.toolchain.outputs.hash }}-
+            go-build-${{ runner.os }}-
 
       - name: Build osxd
         run: make build
