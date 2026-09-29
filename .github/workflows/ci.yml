@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# Cancel runs superseded by a newer push to the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Run tests
@@ -38,6 +43,18 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # The test job owns setup-go's cache key, so the compiled gotk4
+          # packages would never be saved. Cache them under our own key.
+          cache: false
+
+      - name: Cache Go build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-${{ runner.os }}-
 
       - name: Install GTK
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libgirepository1.0-dev
