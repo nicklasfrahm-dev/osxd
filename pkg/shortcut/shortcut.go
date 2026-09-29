@@ -17,17 +17,32 @@ const (
 	inputKey     = "switch-input-source"
 	mediaSchema  = "org.gnome.settings-daemon.plugins.media-keys"
 	customKey    = "custom-keybindings"
+	customPrefix = mediaSchema + ".custom-keybinding:"
 	customPath   = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/osxd/"
-	customSchema = mediaSchema + ".custom-keybinding:" + customPath
+	customSchema = customPrefix + customPath
 
 	mutterSchema = "org.gnome.mutter"
 	centerKey    = "center-new-windows"
 )
 
+// Setting is the original value of a gsettings key that Install changed.
+type Setting struct {
+	Schema string `json:"schema"`
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+}
+
 // Previous holds the settings Install changed, so Restore can put them back.
 type Previous struct {
-	InputSwitch      string
+	// Bindings are the keys that used Super+Space before Install freed it.
+	Bindings         []Setting
 	CenterNewWindows string
+}
+
+// InputSwitch returns the Setting for an original switch-input-source value,
+// as recorded by versions that only freed that one key.
+func InputSwitch(value string) Setting {
+	return Setting{Schema: wmSchema, Key: inputKey, Value: value}
 }
 
 // Runner executes `gsettings args...` and returns trimmed stdout.
@@ -45,21 +60,16 @@ func Center(run Runner) (previous string, err error) {
 	return previous, err
 }
 
-// Install frees Super+Space from input-source switching, binds it to command
-// and centres new windows. It returns the original values for Restore.
+// Install frees Super+Space from every keybinding that uses it (usually
+// input-source switching), binds it to command and centres new windows. It
+// returns the original values for Restore.
 func Install(run Runner, command string) (Previous, error) {
 	var p Previous
 	var err error
 	if p.CenterNewWindows, err = Center(run); err != nil {
 		return p, err
 	}
-	previous, err := run("get", wmSchema, inputKey)
-	if err != nil {
-		return p, err
-	}
-	p.InputSwitch = previous
-	keys := parseList(previous)
-	if _, err = run("set", wmSchema, inputKey, formatList(remove(keys, Binding))); err != nil {
+	if p.Bindings, err = free(run); err != nil {
 		return p, err
 	}
 
@@ -82,14 +92,98 @@ func Install(run Runner, command string) (Previous, error) {
 	return p, nil
 }
 
+// free removes Super+Space from every keybinding schema and from other
+// custom keybindings, returning the original value of each key it changed.
+func free(run Runner) ([]Setting, error) {
+	var changed []Setting
+	release := func(s Setting) error {
+		v, ok := without(s.Value, Binding)
+		if !ok {
+			return nil
+		}
+		if _, err := run("set", s.Schema, s.Key, v); err != nil {
+			return err
+		}
+		changed = append(changed, s)
+		return nil
+	}
+
+	raw, err := run("list-schemas")
+	if err != nil {
+		return nil, err
+	}
+	for _, schema := range strings.Fields(raw) {
+		if !strings.HasSuffix(schema, ".keybindings") && schema != mediaSchema {
+			continue
+		}
+		// Each line is `schema key value`.
+		lines, err := run("list-recursively", schema)
+		if err != nil {
+			return changed, err
+		}
+		for _, line := range strings.Split(lines, "\n") {
+			f := strings.SplitN(line, " ", 3)
+			if len(f) != 3 {
+				continue
+			}
+			if err := release(Setting{Schema: f[0], Key: f[1], Value: f[2]}); err != nil {
+				return changed, err
+			}
+		}
+	}
+
+	raw, err = run("get", mediaSchema, customKey)
+	if err != nil {
+		return changed, err
+	}
+	for _, path := range parseList(raw) {
+		if path == customPath {
+			continue
+		}
+		value, err := run("get", customPrefix+path, "binding")
+		if err != nil {
+			return changed, err
+		}
+		if err := release(Setting{Schema: customPrefix + path, Key: "binding", Value: value}); err != nil {
+			return changed, err
+		}
+	}
+	return changed, nil
+}
+
+// without returns value with accel removed and reports whether it was present.
+// value is a gsettings string array or string; other types never match.
+func without(value, accel string) (string, bool) {
+	isList := strings.HasPrefix(value, "[") || strings.HasPrefix(value, "@as")
+	if !isList && !strings.HasPrefix(value, "'") {
+		return value, false
+	}
+	var kept []string
+	found := false
+	for _, it := range parseList(value) {
+		if strings.EqualFold(it, accel) {
+			found = true
+		} else {
+			kept = append(kept, it)
+		}
+	}
+	switch {
+	case !found:
+		return value, false
+	case isList:
+		return formatList(kept), true
+	default:
+		return "''", true
+	}
+}
+
 // Restore undoes Install. previous is the value Install returned.
 //
 // Order matters: the custom keybinding must release Super+Space before the
-// input-source binding takes it back, otherwise GNOME's grab for the input
-// switch fails and the key stays dead until the next login. Clearing the
-// binding first makes the settings daemon drop its grab, but it does so
-// asynchronously, so settle is called to give it time before the original
-// binding is written back.
+// original bindings take it back, otherwise GNOME's grab for them fails and
+// the key stays dead until the next login. Clearing the binding first makes
+// the settings daemon drop its grab, but it does so asynchronously, so settle
+// is called to give it time before the original bindings are written back.
 func Restore(run Runner, previous Previous, settle func()) error {
 	if _, err := run("set", customSchema, "binding", ""); err != nil {
 		return err
@@ -107,8 +201,8 @@ func Restore(run Runner, previous Previous, settle func()) error {
 	}
 	settle()
 
-	if previous.InputSwitch != "" {
-		if _, err := run("set", wmSchema, inputKey, previous.InputSwitch); err != nil {
+	for _, s := range previous.Bindings {
+		if _, err := run("set", s.Schema, s.Key, s.Value); err != nil {
 			return err
 		}
 	}

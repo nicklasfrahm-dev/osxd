@@ -2,6 +2,7 @@ package shortcut
 
 import (
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -14,6 +15,28 @@ func fakeRunner(store map[string]string, log *[]string) Runner {
 			return store[args[1]+" "+args[2]], nil
 		case "set":
 			store[args[1]+" "+args[2]] = args[3]
+		case "list-schemas":
+			seen := map[string]bool{}
+			for k := range store {
+				if s := strings.Fields(k)[0]; !strings.Contains(s, ":") {
+					seen[s] = true
+				}
+			}
+			var out []string
+			for s := range seen {
+				out = append(out, s)
+			}
+			sort.Strings(out)
+			return strings.Join(out, "\n"), nil
+		case "list-recursively":
+			var out []string
+			for k, v := range store {
+				if strings.HasPrefix(k, args[1]+" ") {
+					out = append(out, k+" "+v)
+				}
+			}
+			sort.Strings(out)
+			return strings.Join(out, "\n"), nil
 		}
 		return "", nil
 	}
@@ -32,7 +55,8 @@ func TestInstallAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prev.InputSwitch != "['<Super>space', 'XF86Keyboard']" || prev.CenterNewWindows != "false" {
+	want := []Setting{InputSwitch("['<Super>space', 'XF86Keyboard']")}
+	if !reflect.DeepEqual(prev.Bindings, want) || prev.CenterNewWindows != "false" {
 		t.Fatalf("previous = %+v", prev)
 	}
 	if got := store[mutterSchema+" "+centerKey]; got != "true" {
@@ -59,7 +83,7 @@ func TestInstallAndRestore(t *testing.T) {
 	if err := Restore(run, prev, func() {}); err != nil {
 		t.Fatal(err)
 	}
-	if got := store[wmSchema+" "+inputKey]; got != prev.InputSwitch {
+	if got := store[wmSchema+" "+inputKey]; got != "['<Super>space', 'XF86Keyboard']" {
 		t.Errorf("restored = %q", got)
 	}
 	if got := store[mutterSchema+" "+centerKey]; got != "false" {
@@ -67,6 +91,58 @@ func TestInstallAndRestore(t *testing.T) {
 	}
 	if got := store[mediaSchema+" "+customKey]; got != "@as []" {
 		t.Errorf("custom list after restore = %q", got)
+	}
+}
+
+// Super+Space is freed from, and given back to, whatever used it, not only
+// input-source switching.
+func TestInstallFreesAnyBinding(t *testing.T) {
+	other := "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/"
+	shell := "org.gnome.shell.keybindings"
+	store := map[string]string{
+		wmSchema + " " + inputKey:                 "['XF86Keyboard']",
+		wmSchema + " close":                       "['<Alt>F4']",
+		shell + " toggle-overview":                "['<Super>Space', '<Super>s']",
+		mediaSchema + " " + customKey:             "['" + other + "']",
+		mediaSchema + " volume-step":              "6",
+		customPrefix + other + " binding":         "'<Super>space'",
+		mutterSchema + " " + centerKey:            "false",
+		"org.gnome.desktop.interface font-name":   "'<Super>space'",
+		"org.gnome.mutter.keybindings toggle-foo": "@as []",
+	}
+	orig := map[string]string{}
+	for k, v := range store {
+		orig[k] = v
+	}
+	var log []string
+	run := fakeRunner(store, &log)
+
+	prev, err := Install(run, "/bin/osxd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]string{
+		wmSchema + " " + inputKey:               "['XF86Keyboard']",
+		wmSchema + " close":                     "['<Alt>F4']",
+		shell + " toggle-overview":              "['<Super>s']",
+		customPrefix + other + " binding":       "''",
+		"org.gnome.desktop.interface font-name": "'<Super>space'",
+	} {
+		if got := store[k]; got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+	if len(prev.Bindings) != 2 {
+		t.Errorf("bindings = %+v", prev.Bindings)
+	}
+
+	if err := Restore(run, prev, func() {}); err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range orig {
+		if got := store[k]; got != want {
+			t.Errorf("after restore %s = %q, want %q", k, got, want)
+		}
 	}
 }
 
@@ -91,7 +167,7 @@ func TestRestoreReleasesBindingFirst(t *testing.T) {
 	var log []string
 	run := fakeRunner(store, &log)
 
-	prev := Previous{InputSwitch: "['<Super>space', 'XF86Keyboard']"}
+	prev := Previous{Bindings: []Setting{InputSwitch("['<Super>space', 'XF86Keyboard']")}}
 	settled := -1
 	if err := Restore(run, prev, func() { settled = len(log) }); err != nil {
 		t.Fatal(err)
