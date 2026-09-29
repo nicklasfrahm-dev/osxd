@@ -1,0 +1,13 @@
+[Unit]
+Description=osxd desktop daemon
+PartOf=graphical-session.target
+After=graphical-session.target
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+ExecStart=@BINDIR@/osxd --background
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
