@@ -22,7 +22,7 @@ A small Go daemon that brings macOS-style features to GNOME.
 make install
 ```
 
-This builds `osxd`, installs it to `~/.local/bin`, and installs, enables and starts a systemd user service (`osxd.service`) that runs with your graphical session. Close any copy you started by hand first, or the service exits immediately.
+This builds `osxd`, installs it to `~/.local/bin`, installs its icon and a hidden desktop entry under `~/.local/share`, and installs, enables and starts a systemd user service (`osxd.service`) that runs with your graphical session. Close any copy you started by hand first, or the service exits immediately.
 
 See each feature's documentation for first-run setup.
 
