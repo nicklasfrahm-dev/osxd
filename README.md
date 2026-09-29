@@ -1,3 +1,5 @@
+<img src="contrib/dev.nicklasfrahm.Osxd.svg" alt="osxd icon" align="right" width="150" height="150">
+
 # osxd
 
 A small Go daemon that brings macOS-style features to GNOME.
