@@ -8,7 +8,7 @@ A small Go daemon that brings macOS-style features to GNOME.
 
 ## Requirements
 
-- GNOME on Wayland (tested on Ubuntu 24.04, GNOME 46)
+- GNOME on Wayland on Ubuntu 24.04 LTS or 26.04 LTS. Both were confirmed to build; only 24.04 has been run. Ubuntu 22.04 is not supported (see below).
 - Go 1.27 or newer (see `go.mod`)
 - GTK 4 and GLib development headers:
 
@@ -43,7 +43,7 @@ make test    # run the tests
 
 Code is organized by feature under `pkg/features/<feature>/`. Only `cmd/osxd/main.go` needs GTK.
 
-`gotk4` is pinned to v0.3.1 because v0.4 needs a newer GLib than Ubuntu 24.04 ships.
+`gotk4` is pinned to v0.3.1. v0.4 needs a newer GLib than Ubuntu 24.04 ships, and v0.3.1 needs GLib 2.76 or newer, which is why Ubuntu 22.04 (GLib 2.72) cannot build it.
 
 ## Known limits
 
