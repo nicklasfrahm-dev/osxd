@@ -16,9 +16,9 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
-	"github.com/nicklasfrahm/osxd/pkg/apps"
 	"github.com/nicklasfrahm/osxd/pkg/config"
-	"github.com/nicklasfrahm/osxd/pkg/shortcut"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/apps"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/shortcut"
 )
 
 const appID = "dev.nicklasfrahm.Osxd"

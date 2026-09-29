@@ -1,6 +1,10 @@
 # osxd
 
-A small Go daemon that brings macOS-style features to GNOME. It currently provides a Spotlight-like application launcher, opened with **Super+Space**.
+A small Go daemon that brings macOS-style features to GNOME.
+
+## Features
+
+- [Spotlight](docs/spotlight.md): an application launcher with fuzzy search, opened with **Super+Space**.
 
 ## Requirements
 
@@ -20,29 +24,7 @@ make install
 
 This builds `osxd`, installs it to `~/.local/bin`, and installs, enables and starts a systemd user service (`osxd.service`) that runs with your graphical session. Close any copy you started by hand first, or the service exits immediately.
 
-On first start, osxd asks whether it may take over Super+Space. It asks again on every start until you agree. Run `osxd --setup` to be asked again after agreeing.
-
-## Usage
-
-Press **Super+Space** to toggle the launcher, then type to search installed apps.
-
-| Key | Action |
-| --- | --- |
-| Up / Down | Move the selection |
-| Enter | Launch the selected app |
-| Esc, or click away | Dismiss |
-
-Search is fuzzy: `ffx` finds Firefox and `vsc` finds Visual Studio Code.
-
-## How the shortcut works
-
-Wayland does not let applications grab global hotkeys, so osxd changes GNOME's own settings when you agree:
-
-- removes `<Super>space` from every GNOME keybinding that uses it, usually `org.gnome.desktop.wm.keybindings switch-input-source`, including other custom keybindings
-- adds a custom keybinding that runs `osxd`, which toggles the running instance
-- enables `org.gnome.mutter center-new-windows`, because Wayland apps cannot position their own windows. This centres new windows in **all** applications.
-
-The original values are saved in `~/.config/osxd/config.json`.
+See each feature's documentation for first-run setup.
 
 ## Uninstall
 
@@ -59,12 +41,12 @@ make build   # build ./osxd
 make test    # run the tests
 ```
 
-The search and shortcut logic are plain Go with unit tests. Only `cmd/osxd/main.go` needs GTK.
+Code is organized by feature under `pkg/features/<feature>/`. Only `cmd/osxd/main.go` needs GTK.
 
 `gotk4` is pinned to v0.3.1 because v0.4 needs a newer GLib than Ubuntu 24.04 ships.
 
 ## Known limits
 
 - GNOME on Wayland only. Other desktops are not supported.
-- The launcher has a fixed dark theme and no background blur.
-- Search covers installed applications only.
+
+Feature-specific limits are listed in each feature's documentation.

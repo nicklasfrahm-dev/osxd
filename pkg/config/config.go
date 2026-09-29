@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nicklasfrahm/osxd/pkg/shortcut"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/shortcut"
 )
 
 // Consent is the user's answer to the "may I take over Super+Space?" question.
