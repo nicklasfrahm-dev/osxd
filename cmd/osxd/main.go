@@ -79,17 +79,21 @@ func main() {
 	}
 
 	if len(os.Args) > 1 && os.Args[1] == "--restore" {
-		if err := shortcut.Restore(gsettings, shortcut.Previous{
-			InputSwitch:      cfg.PreviousInputSwitch,
+		prev := shortcut.Previous{
+			Bindings:         cfg.PreviousBindings,
 			CenterNewWindows: cfg.PreviousCenterNewWindows,
-		}, func() { time.Sleep(time.Second) }); err != nil {
+		}
+		if cfg.PreviousInputSwitch != "" {
+			prev.Bindings = append(prev.Bindings, shortcut.InputSwitch(cfg.PreviousInputSwitch))
+		}
+		if err := shortcut.Restore(gsettings, prev, func() { time.Sleep(time.Second) }); err != nil {
 			fatal(err)
 		}
-		cfg.Consent, cfg.PreviousInputSwitch, cfg.PreviousCenterNewWindows = config.Unasked, "", ""
+		cfg.Consent, cfg.PreviousBindings, cfg.PreviousInputSwitch, cfg.PreviousCenterNewWindows = config.Unasked, nil, "", ""
 		if err := config.Save(cfgPath, cfg); err != nil {
 			fatal(err)
 		}
-		fmt.Println("Super+Space restored to input-source switching.")
+		fmt.Println("Super+Space restored to its previous bindings.")
 		return
 	}
 
@@ -138,8 +142,8 @@ func main() {
 func askConsent(app *gtk.Application, done func(granted bool)) {
 	title := gtk.NewLabel("Use Super+Space for the osxd launcher?")
 	title.AddCSSClass("title-3")
-	detail := gtk.NewLabel("Super+Space currently switches the keyboard input source. " +
-		"Allow osxd to take it over? This also makes GNOME open new windows centred (needed on Wayland). You can undo this any time with `osxd --restore`.")
+	detail := gtk.NewLabel("Super+Space usually switches the keyboard input source. " +
+		"Allow osxd to take it over from whatever uses it now? This also makes GNOME open new windows centred (needed on Wayland). You can undo this any time with `osxd --restore`.")
 	detail.SetWrap(true)
 	detail.SetMaxWidthChars(48)
 
@@ -190,7 +194,7 @@ func applyConsent(cfg config.Config, path, self string, granted bool) config.Con
 			// Keep the originals from the first grant; re-running setup would
 			// otherwise record our own modified values as the "previous" ones.
 			if cfg.Consent != config.Granted {
-				cfg.PreviousInputSwitch, cfg.PreviousCenterNewWindows = prev.InputSwitch, prev.CenterNewWindows
+				cfg.PreviousBindings, cfg.PreviousCenterNewWindows = prev.Bindings, prev.CenterNewWindows
 			}
 			cfg.Consent = config.Granted
 		}

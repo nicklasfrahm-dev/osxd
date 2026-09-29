@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/nicklasfrahm/osxd/pkg/shortcut"
 )
 
 // Consent is the user's answer to the "may I take over Super+Space?" question.
@@ -20,8 +22,11 @@ const (
 // Config is stored as JSON in the user's config directory.
 type Config struct {
 	Consent Consent `json:"shortcut_consent"`
-	// PreviousInputSwitch holds the original switch-input-source value so the
-	// shortcut can be given back with `osxd --restore`.
+	// PreviousBindings holds the original value of every keybinding that used
+	// Super+Space, so the shortcut can be given back with `osxd --restore`.
+	PreviousBindings []shortcut.Setting `json:"previous_bindings,omitempty"`
+	// PreviousInputSwitch is the original switch-input-source value, as
+	// recorded by versions that only freed that key. Kept so they can restore.
 	PreviousInputSwitch string `json:"previous_input_switch,omitempty"`
 	// PreviousCenterNewWindows is the original org.gnome.mutter value.
 	PreviousCenterNewWindows string `json:"previous_center_new_windows,omitempty"`

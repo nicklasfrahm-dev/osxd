@@ -38,7 +38,7 @@ Search is fuzzy: `ffx` finds Firefox and `vsc` finds Visual Studio Code.
 
 Wayland does not let applications grab global hotkeys, so osxd changes GNOME's own settings when you agree:
 
-- removes `<Super>space` from `org.gnome.desktop.wm.keybindings switch-input-source`
+- removes `<Super>space` from every GNOME keybinding that uses it, usually `org.gnome.desktop.wm.keybindings switch-input-source`, including other custom keybindings
 - adds a custom keybinding that runs `osxd`, which toggles the running instance
 - enables `org.gnome.mutter center-new-windows`, because Wayland apps cannot position their own windows. This centres new windows in **all** applications.
 
@@ -50,7 +50,7 @@ The original values are saved in `~/.config/osxd/config.json`.
 make uninstall
 ```
 
-This runs `osxd --restore` first, which gives Super+Space back to input-source switching and resets the centring setting, then removes the service and binary.
+This runs `osxd --restore` first, which gives Super+Space back to whatever used it before (usually input-source switching) and resets the centring setting, then removes the service and binary.
 
 ## Development
 

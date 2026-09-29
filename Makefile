@@ -20,7 +20,7 @@ install: build
 	systemctl --user enable osxd.service
 	systemctl --user restart osxd.service
 
-# Gives Super+Space back to input-source switching, then removes the service
+# Gives Super+Space back to its previous bindings, then removes the service
 # and binary.
 uninstall:
 	-$(BINDIR)/$(BIN) --restore
