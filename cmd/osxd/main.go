@@ -108,6 +108,14 @@ func main() {
 		fatal(err)
 	}
 
+	// The launcher brings its own styling, so pin GTK's built-in theme rather
+	// than parsing the user's: third-party themes often target newer GTK
+	// releases (e.g. color-mix() needs 4.16) and flood the log with
+	// "Theme parser error" warnings. An explicit GTK_THEME still wins.
+	if os.Getenv("GTK_THEME") == "" {
+		os.Setenv("GTK_THEME", "Adwaita:dark")
+	}
+
 	app := gtk.NewApplication(appID, gio.ApplicationFlagsNone)
 	var l *launcher
 	app.ConnectActivate(func() {
