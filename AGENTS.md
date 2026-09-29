@@ -9,3 +9,7 @@
 ## Pull requests
 
 - The PR title must follow the same rules as commit messages: `feat` or `fix`, a required scope, imperative mood.
+
+## Code layout
+
+- Never use `internal/`. Put all reusable packages under `pkg/`.
