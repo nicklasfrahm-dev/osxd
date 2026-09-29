@@ -59,7 +59,7 @@ make build   # build ./osxd
 make test    # run the tests
 ```
 
-The search and shortcut logic are plain Go with unit tests. Only `main.go` needs GTK.
+The search and shortcut logic are plain Go with unit tests. Only `cmd/osxd/main.go` needs GTK.
 
 `gotk4` is pinned to v0.3.1 because v0.4 needs a newer GLib than Ubuntu 24.04 ships.
 

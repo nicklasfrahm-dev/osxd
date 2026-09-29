@@ -6,7 +6,7 @@ BIN     := osxd
 .PHONY: build test install uninstall clean
 
 build:
-	go build -o $(BIN) .
+	go build -o $(BIN) ./cmd/osxd
 
 test:
 	go test ./...
