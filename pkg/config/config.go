@@ -30,6 +30,12 @@ type Config struct {
 	PreviousInputSwitch string `json:"previous_input_switch,omitempty"`
 	// PreviousCenterNewWindows is the original org.gnome.mutter value.
 	PreviousCenterNewWindows string `json:"previous_center_new_windows,omitempty"`
+	// SearchURL is the web search used by the launcher, with %s standing for
+	// the query. Empty means DuckDuckGo.
+	SearchURL string `json:"search_url,omitempty"`
+	// DisableLinkPreviews stops the launcher from fetching a page to show a
+	// preview card when the query is a link.
+	DisableLinkPreviews bool `json:"disable_link_previews,omitempty"`
 }
 
 // Path returns the location of the config file.
