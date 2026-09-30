@@ -35,6 +35,10 @@ jobs:
   build:
     name: Build binary
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets "Verify GTK" delete a broken apt cache.
+      actions: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,13 +51,35 @@ jobs:
           # packages would never be saved. Cache them under our own key.
           cache: false
 
-      # Install from apt directly. cache-apt-pkgs-action swallowed a failed
-      # install from a stale mirror and saved an empty package cache, which
-      # every later run then restored.
+      # The action keys its cache on the requested packages' versions, but not
+      # their dependencies'. Add the OS release so an image upgrade never
+      # restores libraries built for another Ubuntu.
+      - name: Detect OS release
+        id: os
+        run: . /etc/os-release && echo "release=${ID}-${VERSION_ID}" >> "$GITHUB_OUTPUT"
+
       - name: Install GTK
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
+        with:
+          packages: libgtk-4-dev libgirepository1.0-dev
+          version: ${{ steps.os.outputs.release }}
+
+      # The action reports success even when apt fails (for example on a stale
+      # mirror), then saves the empty result under a key that never changes
+      # until GTK does. Detect that, drop the bad cache so the next run starts
+      # fresh, and install from apt so this run still builds.
+      - name: Verify GTK
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          modules="gtk4 gobject-introspection-1.0"
+          pkg-config --exists $modules && exit 0
+          echo "::warning::Cached GTK packages are incomplete; reinstalling from apt."
+          gh cache delete "cache-apt-pkgs_${CACHE_KEY}" --ref "$GITHUB_REF" --repo "$GITHUB_REPOSITORY" ||
+            echo "::warning::Could not delete cache cache-apt-pkgs_${CACHE_KEY}."
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libgtk-4-dev libgirepository1.0-dev
+          pkg-config --exists $modules
 
       # Cached cgo objects go stale when Go, the C compiler or the GTK stack
       # changes. An existing key is never re-saved, so fold those versions into
