@@ -47,8 +47,18 @@ jobs:
           # packages would never be saved. Cache them under our own key.
           cache: false
 
+      # The action keys its cache on the requested packages' versions, but not
+      # their dependencies'. Add the OS release so an image upgrade never
+      # restores libraries built for another Ubuntu.
+      - name: Detect OS release
+        id: os
+        run: . /etc/os-release && echo "release=${ID}-${VERSION_ID}" >> "$GITHUB_OUTPUT"
+
       - name: Install GTK
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libgirepository1.0-dev
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
+        with:
+          packages: libgtk-4-dev libgirepository1.0-dev
+          version: ${{ steps.os.outputs.release }}
 
       # Cached cgo objects go stale when Go, the C compiler or the GTK stack
       # changes. An existing key is never re-saved, so fold those versions into
