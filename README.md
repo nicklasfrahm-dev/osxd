@@ -1,12 +1,12 @@
-# <img src="contrib/dev.nicklasfrahm.Osxd.svg" alt="osxd icon" align="right" width="150" height="150"> osxd
+# <img src="contrib/dev.nicklasfrahm.Osxd.svg" alt="osxd icon" align="right" width="100" height="100"> osxd
 
 A small Go daemon that brings macOS-style features to GNOME.
 
-## Features
+### Features
 
 - [Spotlight](docs/spotlight.md): a launcher with fuzzy search for apps, files, websites with link previews, web searches and a calculator, opened with **Super+Space**.
 
-## Requirements
+### Requirements
 
 - GNOME on Wayland on Ubuntu 24.04 LTS or 26.04 LTS. Both were confirmed to build; only 24.04 has been run. Ubuntu 22.04 is not supported (see below).
 - Go 1.27 or newer (see `go.mod`)
@@ -16,7 +16,7 @@ A small Go daemon that brings macOS-style features to GNOME.
   sudo apt install libgtk-4-dev libglib2.0-dev libgirepository1.0-dev
   ```
 
-## Install
+### Install
 
 ```bash
 make install
@@ -26,7 +26,7 @@ This builds `osxd`, installs it to `~/.local/bin`, installs its icon and a hidde
 
 See each feature's documentation for first-run setup.
 
-## Uninstall
+### Uninstall
 
 ```bash
 make uninstall
@@ -34,7 +34,7 @@ make uninstall
 
 This runs `osxd --restore` first, which gives Super+Space back to whatever used it before (usually input-source switching) and resets the centring setting, then removes the service and binary.
 
-## Development
+### Development
 
 ```bash
 make build   # build ./osxd
@@ -45,7 +45,7 @@ Code is organized by feature under `pkg/features/<feature>/`. Only `cmd/osxd/mai
 
 `gotk4` is pinned to v0.3.1. v0.4 needs a newer GLib than Ubuntu 24.04 ships, and v0.3.1 needs GLib 2.76 or newer, which is why Ubuntu 22.04 (GLib 2.72) cannot build it.
 
-## Known limits
+### Known limits
 
 - GNOME on Wayland only. Other desktops are not supported.
 
