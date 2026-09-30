@@ -4,7 +4,7 @@ A small Go daemon that brings macOS-style features to GNOME.
 
 ## Features
 
-- [Spotlight](docs/spotlight.md): an application launcher with fuzzy search, opened with **Super+Space**.
+- [Spotlight](docs/spotlight.md): a launcher with fuzzy search for apps, files, websites with link previews, and web searches, opened with **Super+Space**.
 
 ## Requirements
 

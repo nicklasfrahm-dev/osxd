@@ -1,27 +1,48 @@
 // Command osxd is a desktop daemon that brings macOS-style features to GNOME.
-// It currently provides a Spotlight-like application launcher.
+// It currently provides a Spotlight-like launcher for apps, files, websites
+// and web searches.
 //
 // Run it once to start the resident instance; running it again (which is what
 // the Super+Space keybinding does) toggles the window.
 package main
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"github.com/nicklasfrahm/osxd/pkg/config"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/apps"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/files"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/preview"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/shortcut"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/web"
 )
 
 const appID = "dev.nicklasfrahm.Osxd"
+
+// reindexEvery is how often the file index is rebuilt in the background.
+const reindexEvery = 10 * time.Minute
+
+// maxListHeight caps the result list at about eight rows; longer lists
+// scroll so that the window, and with it the search field, stops growing.
+const maxListHeight = 400
+
+// previewDelay is how long typing must pause before a link is fetched, so
+// that "github.c" and "github.co" are not requested on the way to
+// "github.com".
+const previewDelay = 400 // ms
 
 // css gives the launcher its Spotlight look: a rounded card, a
 // large borderless search field and accent-highlighted result rows.
@@ -55,6 +76,19 @@ window.spotlight { background: transparent; }
 	font-size: 15px;
 }
 .spotlight-card row:selected { background: #0a64d8; color: white; }
+.spotlight-card row .detail { color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+.spotlight-card row:selected .detail { color: rgba(255, 255, 255, 0.8); }
+.preview-card {
+	background: rgba(255, 255, 255, 0.06);
+	border-radius: 12px;
+	padding: 10px;
+	margin: 6px 4px 2px 4px;
+	color: white;
+}
+.preview-card picture { border-radius: 8px; }
+.preview-card .site { color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+.preview-card .title { font-size: 15px; font-weight: bold; }
+.preview-card .description { color: rgba(255, 255, 255, 0.75); font-size: 13px; }
 `
 
 func loadCSS() {
@@ -122,7 +156,11 @@ func main() {
 		if l == nil {
 			gtk.WindowSetDefaultIconName(appID)
 			app.Hold() // stay resident while the window is hidden
-			l = newLauncher(app)
+			var fetcher *preview.Fetcher
+			if !cfg.DisableLinkPreviews {
+				fetcher = preview.NewFetcher()
+			}
+			l = newLauncher(app, cfg.SearchURL, startIndex(), fetcher)
 			if cfg.Consent == config.Granted && cfg.PreviousCenterNewWindows == "" {
 				// Granted before centring existed; apply it now.
 				if prev, err := shortcut.Center(gsettings); err == nil {
@@ -214,17 +252,57 @@ func applyConsent(cfg config.Config, path, self string, granted bool) config.Con
 	return cfg
 }
 
-type launcher struct {
-	win     *gtk.ApplicationWindow
-	entry   *gtk.SearchEntry
-	list    *gtk.ListBox
-	all     []apps.App
-	results []apps.App
+// startIndex loads the saved file index and keeps it up to date in the
+// background for as long as osxd runs.
+func startIndex() *files.Index {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "file search disabled:", err)
+		return files.New(nil, nil, "")
+	}
+	cache, err := files.DefaultCache()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "file index will not be saved:", err)
+	}
+	// Snap app data and the Go module cache are large and never what you
+	// are looking for.
+	exclude := []string{filepath.Join(home, "snap"), filepath.Join(home, "go", "pkg")}
+	ix := files.New([]string{home}, exclude, cache)
+	go ix.Run(reindexEvery, nil)
+	return ix
 }
 
-func newLauncher(app *gtk.Application) *launcher {
+// result is one row in the launcher.
+type result struct {
+	title  string
+	detail string
+	icon   func(*gtk.Image)
+	open   []string // command that opens the result
+	link   string   // http(s) page to preview while the row is selected
+}
+
+type launcher struct {
+	win       *gtk.ApplicationWindow
+	entry     *gtk.SearchEntry
+	list      *gtk.ListBox
+	scroll    *gtk.ScrolledWindow
+	all       []apps.App
+	files     *files.Index
+	searchURL string
+	results   []result
+
+	fetcher *preview.Fetcher // nil when previews are disabled
+	card    *previewCard
+	// gen identifies the latest preview request; answers to older ones
+	// are dropped.
+	gen    int
+	cancel context.CancelFunc
+	timer  glib.SourceHandle
+}
+
+func newLauncher(app *gtk.Application, searchURL string, index *files.Index, fetcher *preview.Fetcher) *launcher {
 	loadCSS()
-	l := &launcher{all: apps.Scan(apps.Dirs())}
+	l := &launcher{all: apps.Scan(apps.Dirs()), files: index, searchURL: searchURL, fetcher: fetcher}
 
 	l.entry = gtk.NewSearchEntry()
 	l.entry.SetPlaceholderText("Spotlight Search")
@@ -235,7 +313,14 @@ func newLauncher(app *gtk.Application) *launcher {
 	box := gtk.NewBox(gtk.OrientationVertical, 0)
 	box.AddCSSClass("spotlight-card")
 	box.Append(l.entry)
-	box.Append(l.list)
+	l.scroll = gtk.NewScrolledWindow()
+	l.scroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+	l.scroll.SetPropagateNaturalHeight(true)
+	l.scroll.SetMaxContentHeight(maxListHeight)
+	l.scroll.SetChild(l.list)
+	box.Append(l.scroll)
+	l.card = newPreviewCard()
+	box.Append(l.card.box)
 
 	l.win = gtk.NewApplicationWindow(app)
 	l.win.SetTitle("osxd")
@@ -248,6 +333,7 @@ func newLauncher(app *gtk.Application) *launcher {
 	l.entry.ConnectSearchChanged(l.refresh)
 	l.entry.ConnectActivate(l.launchSelected)
 	l.list.ConnectRowActivated(func(*gtk.ListBoxRow) { l.launchSelected() })
+	l.list.ConnectRowSelected(func(*gtk.ListBoxRow) { l.updatePreview() })
 
 	keys := gtk.NewEventControllerKey()
 	keys.SetPropagationPhase(gtk.PhaseCapture)
@@ -282,7 +368,10 @@ func (l *launcher) show() {
 	l.entry.GrabFocus()
 }
 
-func (l *launcher) hide() { l.win.SetVisible(false) }
+func (l *launcher) hide() {
+	l.stopPreview()
+	l.win.SetVisible(false)
+}
 
 func (l *launcher) toggle() {
 	if l.win.IsVisible() {
@@ -294,34 +383,266 @@ func (l *launcher) toggle() {
 
 func (l *launcher) refresh() {
 	l.list.RemoveAll()
-	l.results = apps.Search(l.all, l.entry.Text(), 8)
-	for _, a := range l.results {
-		l.list.Append(resultRow(a))
+	l.results = l.search(l.entry.Text())
+	for _, r := range l.results {
+		l.list.Append(resultRow(r))
 	}
-	l.list.SetVisible(len(l.results) > 0)
+	l.scroll.SetVisible(len(l.results) > 0)
+	l.scroll.VAdjustment().SetValue(0)
 	if len(l.results) > 0 {
 		l.list.SelectRow(l.list.RowAtIndex(0))
 	}
+	l.updatePreview()
 }
 
-func resultRow(a apps.App) *gtk.Box {
-	icon := gtk.NewImage()
-	if strings.HasPrefix(a.Icon, "/") {
-		icon.SetFromFile(a.Icon)
-	} else if a.Icon != "" {
-		icon.SetFromIconName(a.Icon)
-	} else {
-		icon.SetFromIconName("application-x-executable")
+// stopPreview hides the card and abandons any preview being fetched.
+func (l *launcher) stopPreview() {
+	l.gen++
+	if l.cancel != nil {
+		l.cancel()
+		l.cancel = nil
 	}
+	if l.timer != 0 {
+		glib.SourceRemove(l.timer)
+		l.timer = 0
+	}
+	l.card.box.SetVisible(false)
+}
+
+// updatePreview shows a preview card for the selected row if it is a link.
+// Pages are fetched off the main thread once typing pauses.
+func (l *launcher) updatePreview() {
+	l.stopPreview()
+	row := l.list.SelectedRow()
+	if l.fetcher == nil || row == nil || row.Index() >= len(l.results) {
+		return
+	}
+	link := l.results[row.Index()].link
+	if link == "" {
+		return
+	}
+	if p, ok := l.fetcher.Cached(link); ok {
+		l.card.show(p)
+		return
+	}
+	l.card.loading(link)
+
+	gen := l.gen
+	ctx, cancel := context.WithCancel(context.Background())
+	l.cancel = cancel
+	l.timer = glib.TimeoutAdd(previewDelay, func() bool {
+		l.timer = 0
+		go func() {
+			p, err := l.fetcher.Get(ctx, link)
+			glib.IdleAdd(func() {
+				if gen != l.gen {
+					return // the query changed meanwhile
+				}
+				if err != nil {
+					l.card.box.SetVisible(false)
+					return
+				}
+				l.card.show(p)
+			})
+		}()
+		return false
+	})
+}
+
+// previewCard shows a link's image, site, title and description.
+type previewCard struct {
+	box                      *gtk.Box
+	picture                  *gtk.Picture
+	site, title, description *gtk.Label
+}
+
+func newPreviewCard() *previewCard {
+	c := &previewCard{picture: gtk.NewPicture()}
+	c.picture.SetCanShrink(true)
+	c.picture.SetOverflow(gtk.OverflowHidden)
+	c.picture.SetVAlign(gtk.AlignStart)
+
+	label := func(class string, lines int) *gtk.Label {
+		l := gtk.NewLabel("")
+		l.AddCSSClass(class)
+		l.SetXAlign(0)
+		l.SetWrap(true)
+		l.SetWrapMode(pango.WrapWordChar)
+		l.SetLines(lines)
+		l.SetEllipsize(pango.EllipsizeEnd)
+		l.SetMaxWidthChars(60) // keep long titles from widening the window
+		return l
+	}
+	c.site = label("site", 1)
+	c.title = label("title", 2)
+	c.description = label("description", 3)
+
+	text := gtk.NewBox(gtk.OrientationVertical, 2)
+	text.SetHExpand(true)
+	text.SetVAlign(gtk.AlignCenter)
+	text.Append(c.site)
+	text.Append(c.title)
+	text.Append(c.description)
+
+	c.box = gtk.NewBox(gtk.OrientationHorizontal, 12)
+	c.box.AddCSSClass("preview-card")
+	c.box.Append(c.picture)
+	c.box.Append(text)
+	c.box.SetVisible(false)
+	return c
+}
+
+// loading shows the card for link before its page has arrived.
+func (c *previewCard) loading(link string) {
+	host := link
+	if u, err := url.Parse(link); err == nil {
+		host = strings.TrimPrefix(u.Hostname(), "www.")
+	}
+	c.picture.SetVisible(false)
+	c.site.SetText(host)
+	c.title.SetText("Loading preview\u2026")
+	c.description.SetVisible(false)
+	c.box.SetVisible(true)
+}
+
+func (c *previewCard) show(p preview.Preview) {
+	c.site.SetText(p.SiteName)
+	c.title.SetText(p.Title)
+	c.description.SetText(p.Description)
+	c.description.SetVisible(p.Description != "")
+
+	c.picture.SetVisible(false)
+	if len(p.Image) > 0 {
+		if tex, err := gdk.NewTextureFromBytes(glib.NewBytes(p.Image)); err == nil {
+			c.picture.SetPaintable(tex)
+			if p.IsIcon {
+				c.picture.SetContentFit(gtk.ContentFitContain)
+				c.picture.SetSizeRequest(48, 48)
+			} else {
+				// OpenGraph images are usually 1.91:1.
+				c.picture.SetContentFit(gtk.ContentFitCover)
+				c.picture.SetSizeRequest(192, 100)
+			}
+			c.picture.SetVisible(true)
+		}
+	}
+	c.box.SetVisible(true)
+}
+
+// search builds the rows for query: a link to open if the query looks like
+// one, then apps, then files, and finally a web search.
+func (l *launcher) search(query string) []result {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil
+	}
+	var out []result
+	if link, ok := web.Link(q); ok {
+		preview := ""
+		if strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
+			preview = link
+		}
+		out = append(out, result{
+			title:  "Open " + q,
+			detail: link,
+			icon:   iconName("web-browser"),
+			open:   []string{"gio", "open", link},
+			link:   preview,
+		})
+	}
+	for _, a := range apps.Search(l.all, q, 6) {
+		out = append(out, appResult(a))
+	}
+	out = append(out, fileResults(l.files.Search(q, 10), 5)...)
+
+	search := web.SearchURL(l.searchURL, q)
+	engine := search
+	if u, err := url.Parse(search); err == nil {
+		engine = strings.TrimPrefix(u.Hostname(), "www.")
+	}
+	out = append(out, result{
+		title:  fmt.Sprintf("Search the web for \u201c%s\u201d", q),
+		detail: engine,
+		icon:   iconName("system-search"),
+		open:   []string{"gio", "open", search},
+	})
+	return out
+}
+
+func appResult(a apps.App) result {
+	return result{
+		title: a.Name,
+		icon: func(img *gtk.Image) {
+			switch {
+			case strings.HasPrefix(a.Icon, "/"):
+				img.SetFromFile(a.Icon)
+			case a.Icon != "":
+				img.SetFromIconName(a.Icon)
+			default:
+				img.SetFromIconName("application-x-executable")
+			}
+		},
+		// `gio launch` honours Terminal=, DBusActivatable and field codes.
+		open: []string{"gio", "launch", a.Path},
+	}
+}
+
+// fileResults turns up to limit indexed paths that still exist into rows.
+func fileResults(paths []string, limit int) []result {
+	home, _ := os.UserHomeDir()
+	var out []result
+	for _, p := range paths {
+		if len(out) == limit {
+			break
+		}
+		info, err := os.Stat(p)
+		if err != nil {
+			continue // deleted since the last scan
+		}
+		dir := filepath.Dir(p)
+		if home != "" && (dir == home || strings.HasPrefix(dir, home+"/")) {
+			dir = "~" + strings.TrimPrefix(dir, home)
+		}
+		r := result{title: filepath.Base(p), detail: dir, open: []string{"gio", "open", p}}
+		if info.IsDir() {
+			r.icon = iconName("folder")
+		} else {
+			_, typ := gio.ContentTypeGuess(p, nil)
+			r.icon = func(img *gtk.Image) { img.SetFromGIcon(gio.ContentTypeGetIcon(typ)) }
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+func iconName(name string) func(*gtk.Image) {
+	return func(img *gtk.Image) { img.SetFromIconName(name) }
+}
+
+func resultRow(r result) *gtk.Box {
+	icon := gtk.NewImage()
+	r.icon(icon)
 	icon.SetPixelSize(32)
 
-	label := gtk.NewLabel(a.Name)
-	label.SetXAlign(0)
-	label.SetHExpand(true)
+	title := gtk.NewLabel(r.title)
+	title.SetXAlign(0)
+	title.SetEllipsize(pango.EllipsizeEnd)
+
+	text := gtk.NewBox(gtk.OrientationVertical, 0)
+	text.SetHExpand(true)
+	text.SetVAlign(gtk.AlignCenter)
+	text.Append(title)
+	if r.detail != "" {
+		detail := gtk.NewLabel(r.detail)
+		detail.AddCSSClass("detail")
+		detail.SetXAlign(0)
+		detail.SetEllipsize(pango.EllipsizeMiddle)
+		text.Append(detail)
+	}
 
 	row := gtk.NewBox(gtk.OrientationHorizontal, 12)
 	row.Append(icon)
-	row.Append(label)
+	row.Append(text)
 	return row
 }
 
@@ -330,8 +651,32 @@ func (l *launcher) move(delta int) {
 	if row == nil {
 		return
 	}
-	if next := l.list.RowAtIndex(row.Index() + delta); next != nil {
-		l.list.SelectRow(next)
+	next := l.list.RowAtIndex(row.Index() + delta)
+	if next == nil {
+		return
+	}
+	l.list.SelectRow(next)
+	l.scrollTo(next)
+}
+
+// scrollTo scrolls the list just enough to show row whole, including its
+// margin and rounded corners. Focus stays in the search field, so the list
+// does not follow the selection by itself.
+func (l *launcher) scrollTo(row *gtk.ListBoxRow) {
+	// Measured against the visible area, so the list's own margin and
+	// padding cannot offset the result.
+	b, ok := row.ComputeBounds(l.scroll)
+	if !ok {
+		return
+	}
+	const margin = 2 // the row's CSS margin, plus a pixel of air
+	top, bottom := float64(b.Y())-margin, float64(b.Y()+b.Height())+margin
+	adj := l.scroll.VAdjustment()
+	switch {
+	case top < 0:
+		adj.SetValue(adj.Value() + top)
+	case bottom > float64(l.scroll.Height()):
+		adj.SetValue(adj.Value() + bottom - float64(l.scroll.Height()))
 	}
 }
 
@@ -340,12 +685,15 @@ func (l *launcher) launchSelected() {
 	if row == nil {
 		return
 	}
-	a := l.results[row.Index()]
+	r := l.results[row.Index()]
 	l.hide()
-	// `gio launch` honours Terminal=, DBusActivatable and field codes.
-	if err := exec.Command("gio", "launch", a.Path).Start(); err != nil {
-		fmt.Fprintln(os.Stderr, "launch failed:", err)
+	cmd := exec.Command(r.open[0], r.open[1:]...)
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "open failed:", err)
+		return
 	}
+	go cmd.Wait() // reap it so the resident daemon collects no zombies
+
 }
 
 func hasArg(flag string) bool {
