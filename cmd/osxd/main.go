@@ -1,6 +1,6 @@
 // Command osxd is a desktop daemon that brings macOS-style features to GNOME.
-// It currently provides a Spotlight-like launcher for apps, files, websites
-// and web searches.
+// It currently provides a Spotlight-like launcher for apps, files, websites,
+// web searches and calculations.
 //
 // Run it once to start the resident instance; running it again (which is what
 // the Super+Space keybinding does) toggles the window.
@@ -24,6 +24,7 @@ import (
 
 	"github.com/nicklasfrahm/osxd/pkg/config"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/apps"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/calc"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/files"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/preview"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/shortcut"
@@ -278,6 +279,7 @@ type result struct {
 	detail string
 	icon   func(*gtk.Image)
 	open   []string // command that opens the result
+	copy   string   // text to copy to the clipboard instead of opening
 	link   string   // http(s) page to preview while the row is selected
 }
 
@@ -529,14 +531,23 @@ func (c *previewCard) show(p preview.Preview) {
 	c.box.SetVisible(true)
 }
 
-// search builds the rows for query: a link to open if the query looks like
-// one, then apps, then files, and finally a web search.
+// search builds the rows for query: the result if the query is a
+// calculation, a link to open if it looks like one, then apps, then files,
+// and finally a web search.
 func (l *launcher) search(query string) []result {
 	q := strings.TrimSpace(query)
 	if q == "" {
 		return nil
 	}
 	var out []result
+	if v, ok := calc.Evaluate(q); ok {
+		out = append(out, result{
+			title:  "= " + v,
+			detail: "Press Enter to copy",
+			icon:   iconName("accessories-calculator"),
+			copy:   v,
+		})
+	}
 	if link, ok := web.Link(q); ok {
 		preview := ""
 		if strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
@@ -686,6 +697,11 @@ func (l *launcher) launchSelected() {
 		return
 	}
 	r := l.results[row.Index()]
+	if r.copy != "" {
+		l.win.Clipboard().SetText(r.copy)
+		l.hide()
+		return
+	}
 	l.hide()
 	cmd := exec.Command(r.open[0], r.open[1:]...)
 	if err := cmd.Start(); err != nil {
