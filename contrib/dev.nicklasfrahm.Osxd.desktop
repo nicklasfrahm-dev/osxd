@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=osxd
+Comment=macOS-style features for GNOME
+Exec=@BINDIR@/osxd
+Icon=dev.nicklasfrahm.Osxd
+NoDisplay=true

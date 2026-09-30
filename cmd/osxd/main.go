@@ -120,6 +120,7 @@ func main() {
 	var l *launcher
 	app.ConnectActivate(func() {
 		if l == nil {
+			gtk.WindowSetDefaultIconName(appID)
 			app.Hold() // stay resident while the window is hidden
 			l = newLauncher(app)
 			if cfg.Consent == config.Granted && cfg.PreviousCenterNewWindows == "" {
