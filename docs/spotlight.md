@@ -1,25 +1,34 @@
 # Spotlight
 
-A Spotlight-like launcher for apps, files, websites and web searches, opened with **Super+Space**.
+A Spotlight-like launcher for apps, files, websites, web searches and calculations, opened with **Super+Space**.
 
 ## Usage
 
 Press **Super+Space** to toggle the launcher, then type. Results appear in this order:
 
-1. **Website**: if what you typed looks like a link (`github.com`, `https://go.dev/doc`, `localhost:8080`, `mailto:…`), open it in your default browser.
-2. **Apps**: installed applications.
-3. **Files**: files and folders in your home directory, opened with their default app.
-4. **Web search**: search the web for what you typed.
+1. **Calculator**: if what you typed is a calculation, such as `2 * (3 + 4)`, its result. Press Enter to copy it.
+2. **Website**: if what you typed looks like a link (`github.com`, `https://go.dev/doc`, `localhost:8080`, `mailto:…`), open it in your default browser.
+3. **Apps**: installed applications.
+4. **Files**: files and folders in your home directory, opened with their default app.
+5. **Web search**: search the web for what you typed.
 
 Long result lists scroll instead of growing the window.
 
 | Key | Action |
 | --- | --- |
 | Up / Down | Move the selection |
-| Enter | Open the selected result |
+| Enter | Open the selected result, or copy the calculator result |
 | Esc, or click away | Dismiss |
 
 Search is fuzzy: `ffx` finds Firefox and `vsc` finds Visual Studio Code. File search is stricter, because a home directory has far more names than there are apps.
+
+### Calculator
+
+- Operators: `+ - * / % ^` (also `×`, `÷` and `**`), with parentheses and decimals such as `1.5`
+- Constants: `pi`, `e`
+- Functions: `sqrt`, `abs`, `ln`, `log` (base 10), `sin`, `cos`, `tan` (radians), `floor`, `ceil`, `round`
+
+Results show at most 12 significant digits, so `0.1 + 0.2` gives `0.3`. A bare number such as `42` is not a calculation and shows no result, nor does an unfinished one such as `1.5 +`.
 
 ### File index
 
@@ -71,9 +80,10 @@ The original values are saved in `~/.config/osxd/config.json`. `osxd --restore` 
 | [`pkg/features/spotlight/files`](../pkg/features/spotlight/files) | Indexes the home directory in the background and searches it |
 | [`pkg/features/spotlight/web`](../pkg/features/spotlight/web) | Recognises links and builds web search URLs |
 | [`pkg/features/spotlight/preview`](../pkg/features/spotlight/preview) | Fetches a page's title, description and image for link previews |
+| [`pkg/features/spotlight/calc`](../pkg/features/spotlight/calc) | Evaluates arithmetic typed into the launcher |
 | [`pkg/features/spotlight/fuzzy`](../pkg/features/spotlight/fuzzy) | Fuzzy matching shared by app and file search |
 
-The search, preview and shortcut logic are plain Go with unit tests. The GTK window lives in `cmd/osxd/main.go`.
+The search, calculator, preview and shortcut logic are plain Go with unit tests. The GTK window lives in `cmd/osxd/main.go`.
 
 ## Known limits
 
