@@ -47,24 +47,22 @@ jobs:
           # packages would never be saved. Cache them under our own key.
           cache: false
 
-      # The action keys its cache on the requested packages' versions, but not
-      # their dependencies'. Add the OS release so an image upgrade never
-      # restores libraries built for another Ubuntu.
-      - name: Detect OS release
-        id: os
-        run: . /etc/os-release && echo "release=${ID}-${VERSION_ID}" >> "$GITHUB_OUTPUT"
-
+      # Install from apt directly. cache-apt-pkgs-action swallowed a failed
+      # install from a stale mirror and saved an empty package cache, which
+      # every later run then restored.
       - name: Install GTK
-        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
-        with:
-          packages: libgtk-4-dev libgirepository1.0-dev
-          version: ${{ steps.os.outputs.release }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libgirepository1.0-dev
 
       # Cached cgo objects go stale when Go, the C compiler or the GTK stack
       # changes. An existing key is never re-saved, so fold those versions into
       # the key or the job would rebuild gotk4 from scratch until go.sum moved.
       - name: Fingerprint toolchain
         id: toolchain
+        # Use pipefail so a missing GTK package fails here instead of hashing
+        # the error output into the cache key.
+        shell: bash
         run: |
           {
             go env GOVERSION
