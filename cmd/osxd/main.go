@@ -35,6 +35,10 @@ const appID = "dev.nicklasfrahm.Osxd"
 // reindexEvery is how often the file index is rebuilt in the background.
 const reindexEvery = 10 * time.Minute
 
+// maxListHeight caps the result list at about eight rows; longer lists
+// scroll so that the window, and with it the search field, stops growing.
+const maxListHeight = 400
+
 // previewDelay is how long typing must pause before a link is fetched, so
 // that "github.c" and "github.co" are not requested on the way to
 // "github.com".
@@ -272,6 +276,7 @@ type launcher struct {
 	win       *gtk.ApplicationWindow
 	entry     *gtk.SearchEntry
 	list      *gtk.ListBox
+	scroll    *gtk.ScrolledWindow
 	all       []apps.App
 	files     *files.Index
 	searchURL string
@@ -299,7 +304,12 @@ func newLauncher(app *gtk.Application, searchURL string, index *files.Index, fet
 	box := gtk.NewBox(gtk.OrientationVertical, 0)
 	box.AddCSSClass("spotlight-card")
 	box.Append(l.entry)
-	box.Append(l.list)
+	l.scroll = gtk.NewScrolledWindow()
+	l.scroll.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+	l.scroll.SetPropagateNaturalHeight(true)
+	l.scroll.SetMaxContentHeight(maxListHeight)
+	l.scroll.SetChild(l.list)
+	box.Append(l.scroll)
 	l.card = newPreviewCard()
 	box.Append(l.card.box)
 
@@ -368,7 +378,8 @@ func (l *launcher) refresh() {
 	for _, r := range l.results {
 		l.list.Append(resultRow(r))
 	}
-	l.list.SetVisible(len(l.results) > 0)
+	l.scroll.SetVisible(len(l.results) > 0)
+	l.scroll.VAdjustment().SetValue(0)
 	if len(l.results) > 0 {
 		l.list.SelectRow(l.list.RowAtIndex(0))
 	}
@@ -631,8 +642,32 @@ func (l *launcher) move(delta int) {
 	if row == nil {
 		return
 	}
-	if next := l.list.RowAtIndex(row.Index() + delta); next != nil {
-		l.list.SelectRow(next)
+	next := l.list.RowAtIndex(row.Index() + delta)
+	if next == nil {
+		return
+	}
+	l.list.SelectRow(next)
+	l.scrollTo(next)
+}
+
+// scrollTo scrolls the list just enough to show row whole, including its
+// margin and rounded corners. Focus stays in the search field, so the list
+// does not follow the selection by itself.
+func (l *launcher) scrollTo(row *gtk.ListBoxRow) {
+	// Measured against the visible area, so the list's own margin and
+	// padding cannot offset the result.
+	b, ok := row.ComputeBounds(l.scroll)
+	if !ok {
+		return
+	}
+	const margin = 2 // the row's CSS margin, plus a pixel of air
+	top, bottom := float64(b.Y())-margin, float64(b.Y()+b.Height())+margin
+	adj := l.scroll.VAdjustment()
+	switch {
+	case top < 0:
+		adj.SetValue(adj.Value() + top)
+	case bottom > float64(l.scroll.Height()):
+		adj.SetValue(adj.Value() + bottom - float64(l.scroll.Height()))
 	}
 }
 
