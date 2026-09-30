@@ -35,6 +35,10 @@ jobs:
   build:
     name: Build binary
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets "Verify GTK" delete a broken apt cache.
+      actions: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,11 +64,31 @@ jobs:
           packages: libgtk-4-dev libgirepository1.0-dev
           version: ${{ steps.os.outputs.release }}
 
+      # The action reports success even when apt fails (for example on a stale
+      # mirror), then saves the empty result under a key that never changes
+      # until GTK does. Detect that, drop the bad cache so the next run starts
+      # fresh, and install from apt so this run still builds.
+      - name: Verify GTK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          modules="gtk4 gobject-introspection-1.0"
+          pkg-config --exists $modules && exit 0
+          echo "::warning::Cached GTK packages are incomplete; reinstalling from apt."
+          gh cache delete "cache-apt-pkgs_${CACHE_KEY}" --ref "$GITHUB_REF" --repo "$GITHUB_REPOSITORY" ||
+            echo "::warning::Could not delete cache cache-apt-pkgs_${CACHE_KEY}."
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libgirepository1.0-dev
+          pkg-config --exists $modules
+
       # Cached cgo objects go stale when Go, the C compiler or the GTK stack
       # changes. An existing key is never re-saved, so fold those versions into
       # the key or the job would rebuild gotk4 from scratch until go.sum moved.
       - name: Fingerprint toolchain
         id: toolchain
+        # Use pipefail so a missing GTK package fails here instead of hashing
+        # the error output into the cache key.
+        shell: bash
         run: |
           {
             go env GOVERSION
