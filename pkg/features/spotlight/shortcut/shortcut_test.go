@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/nicklasfrahm/osxd/pkg/gsettings"
 )
 
 func fakeRunner(store map[string]string, log *[]string) Runner {
@@ -76,7 +78,7 @@ func TestInstallAndRestore(t *testing.T) {
 	if _, err := Install(run, "/bin/osxd"); err != nil {
 		t.Fatal(err)
 	}
-	if got := parseList(store[mediaSchema+" "+customKey]); len(got) != 1 {
+	if got := gsettings.ParseList(store[mediaSchema+" "+customKey]); len(got) != 1 {
 		t.Errorf("duplicate paths: %v", got)
 	}
 
@@ -152,8 +154,8 @@ func TestParseList(t *testing.T) {
 		"['a']":      {"a"},
 		"['a', 'b']": {"a", "b"},
 	} {
-		if got := parseList(in); !reflect.DeepEqual(got, want) {
-			t.Errorf("parseList(%q) = %v, want %v", in, got, want)
+		if got := gsettings.ParseList(in); !reflect.DeepEqual(got, want) {
+			t.Errorf("gsettings.ParseList(%q) = %v, want %v", in, got, want)
 		}
 	}
 }

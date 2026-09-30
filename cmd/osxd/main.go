@@ -1,6 +1,7 @@
 // Command osxd is a desktop daemon that brings macOS-style features to GNOME.
-// It currently provides a Spotlight-like launcher for apps, files, websites,
-// web searches and calculations.
+// It provides a Spotlight-like launcher for apps, files, websites, web
+// searches and calculations, and macOS-style Super shortcuts such as Super+C
+// to copy.
 //
 // Run it once to start the resident instance; running it again (which is what
 // the Super+Space keybinding does) toggles the window.
@@ -23,12 +24,14 @@ import (
 	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"github.com/nicklasfrahm/osxd/pkg/config"
+	"github.com/nicklasfrahm/osxd/pkg/features/hotkeys"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/apps"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/calc"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/files"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/preview"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/shortcut"
 	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/web"
+	"github.com/nicklasfrahm/osxd/pkg/gsettings"
 )
 
 const appID = "dev.nicklasfrahm.Osxd"
@@ -98,11 +101,6 @@ func loadCSS() {
 	gtk.StyleContextAddProviderForDisplay(gdk.DisplayGetDefault(), p, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 }
 
-func gsettings(args ...string) (string, error) {
-	out, err := exec.Command("gsettings", args...).Output()
-	return strings.TrimSpace(string(out)), err
-}
-
 func main() {
 	cfgPath, err := config.Path()
 	if err != nil {
@@ -121,14 +119,17 @@ func main() {
 		if cfg.PreviousInputSwitch != "" {
 			prev.Bindings = append(prev.Bindings, shortcut.InputSwitch(cfg.PreviousInputSwitch))
 		}
-		if err := shortcut.Restore(gsettings, prev, func() { time.Sleep(time.Second) }); err != nil {
+		if err := shortcut.Restore(gsettings.Run, prev, func() { time.Sleep(time.Second) }); err != nil {
 			fatal(err)
+		}
+		if err := hotkeys.DisableExtension(gsettings.Run); err != nil {
+			fmt.Fprintln(os.Stderr, "could not disable the GNOME Shell extension:", err)
 		}
 		cfg.Consent, cfg.PreviousBindings, cfg.PreviousInputSwitch, cfg.PreviousCenterNewWindows = config.Unasked, nil, "", ""
 		if err := config.Save(cfgPath, cfg); err != nil {
 			fatal(err)
 		}
-		fmt.Println("Super+Space restored to its previous bindings.")
+		fmt.Println("Super+Space restored to its previous bindings and the GNOME Shell extension disabled.")
 		return
 	}
 
@@ -162,9 +163,12 @@ func main() {
 				fetcher = preview.NewFetcher()
 			}
 			l = newLauncher(app, cfg.SearchURL, startIndex(), fetcher)
+			if !cfg.DisableHotkeys {
+				startHotkeys(cfg.Terminals)
+			}
 			if cfg.Consent == config.Granted && cfg.PreviousCenterNewWindows == "" {
 				// Granted before centring existed; apply it now.
-				if prev, err := shortcut.Center(gsettings); err == nil {
+				if prev, err := shortcut.Center(gsettings.Run); err == nil {
 					cfg.PreviousCenterNewWindows = prev
 					_ = config.Save(cfgPath, cfg)
 				}
@@ -235,7 +239,7 @@ func askConsent(app *gtk.Application, done func(granted bool)) {
 // applyConsent records the answer and, if granted, installs the keybinding.
 func applyConsent(cfg config.Config, path, self string, granted bool) config.Config {
 	if granted {
-		prev, err := shortcut.Install(gsettings, self)
+		prev, err := shortcut.Install(gsettings.Run, self)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "could not install shortcut:", err)
 		} else {
@@ -251,6 +255,23 @@ func applyConsent(cfg config.Config, path, self string, granted bool) config.Con
 		fmt.Fprintln(os.Stderr, "could not save config:", err)
 	}
 	return cfg
+}
+
+// startHotkeys remaps Super shortcuts in the background for as long as osxd
+// runs. Failing to start, usually for lack of access to the keyboards, only
+// disables the hotkeys.
+func startHotkeys(terminals []string) {
+	if err := hotkeys.EnableExtension(gsettings.Run); err != nil {
+		fmt.Fprintln(os.Stderr, "could not enable the GNOME Shell extension:", err)
+	}
+	if hotkeys.UserExtensionsDisabled(gsettings.Run) {
+		fmt.Fprintln(os.Stderr, "hotkeys: GNOME is set to load no extensions (org.gnome.shell disable-user-extensions), so terminals cannot be told apart")
+	}
+	go func() {
+		if err := hotkeys.Run(terminals); err != nil {
+			fmt.Fprintln(os.Stderr, "hotkeys disabled:", err)
+		}
+	}()
 }
 
 // startIndex loads the saved file index and keeps it up to date in the

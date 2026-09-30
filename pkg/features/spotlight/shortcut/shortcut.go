@@ -6,8 +6,9 @@
 package shortcut
 
 import (
-	"fmt"
 	"strings"
+
+	"github.com/nicklasfrahm/osxd/pkg/gsettings"
 )
 
 const (
@@ -46,7 +47,7 @@ func InputSwitch(value string) Setting {
 }
 
 // Runner executes `gsettings args...` and returns trimmed stdout.
-type Runner func(args ...string) (string, error)
+type Runner = gsettings.Runner
 
 // Center makes GNOME open new windows centred (Wayland clients cannot place
 // their own windows). It returns the previous value for Restore. This is a
@@ -77,11 +78,11 @@ func Install(run Runner, command string) (Previous, error) {
 	if err != nil {
 		return p, err
 	}
-	paths := parseList(raw)
+	paths := gsettings.ParseList(raw)
 	if !contains(paths, customPath) {
 		paths = append(paths, customPath)
 	}
-	if _, err = run("set", mediaSchema, customKey, formatList(paths)); err != nil {
+	if _, err = run("set", mediaSchema, customKey, gsettings.FormatList(paths)); err != nil {
 		return p, err
 	}
 	for _, kv := range [][2]string{{"name", "osxd launcher"}, {"command", command}, {"binding", Binding}} {
@@ -136,7 +137,7 @@ func free(run Runner) ([]Setting, error) {
 	if err != nil {
 		return changed, err
 	}
-	for _, path := range parseList(raw) {
+	for _, path := range gsettings.ParseList(raw) {
 		if path == customPath {
 			continue
 		}
@@ -160,7 +161,7 @@ func without(value, accel string) (string, bool) {
 	}
 	var kept []string
 	found := false
-	for _, it := range parseList(value) {
+	for _, it := range gsettings.ParseList(value) {
 		if strings.EqualFold(it, accel) {
 			found = true
 		} else {
@@ -171,7 +172,7 @@ func without(value, accel string) (string, bool) {
 	case !found:
 		return value, false
 	case isList:
-		return formatList(kept), true
+		return gsettings.FormatList(kept), true
 	default:
 		return "''", true
 	}
@@ -192,8 +193,8 @@ func Restore(run Runner, previous Previous, settle func()) error {
 	if err != nil {
 		return err
 	}
-	paths := remove(parseList(raw), customPath)
-	if _, err := run("set", mediaSchema, customKey, formatList(paths)); err != nil {
+	paths := remove(gsettings.ParseList(raw), customPath)
+	if _, err := run("set", mediaSchema, customKey, gsettings.FormatList(paths)); err != nil {
 		return err
 	}
 	if _, err := run("reset-recursively", customSchema); err != nil {
@@ -212,34 +213,6 @@ func Restore(run Runner, previous Previous, settle func()) error {
 		}
 	}
 	return nil
-}
-
-// parseList parses a gsettings string array such as `['a', 'b']` or `@as []`.
-func parseList(s string) []string {
-	var out []string
-	for {
-		i := strings.IndexByte(s, '\'')
-		if i < 0 {
-			return out
-		}
-		j := strings.IndexByte(s[i+1:], '\'')
-		if j < 0 {
-			return out
-		}
-		out = append(out, s[i+1:i+1+j])
-		s = s[i+j+2:]
-	}
-}
-
-func formatList(items []string) string {
-	if len(items) == 0 {
-		return "@as []"
-	}
-	q := make([]string, len(items))
-	for i, it := range items {
-		q[i] = fmt.Sprintf("'%s'", it)
-	}
-	return "[" + strings.Join(q, ", ") + "]"
 }
 
 func contains(items []string, s string) bool {

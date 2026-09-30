@@ -4,7 +4,9 @@ go 1.27.0
 
 require (
 	github.com/diamondburned/gotk4/pkg v0.3.1
+	github.com/godbus/dbus/v5 v5.2.2
 	golang.org/x/net v0.58.0
+	golang.org/x/sys v0.48.0
 )
 
 require (
