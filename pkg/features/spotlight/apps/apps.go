@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nicklasfrahm/osxd/pkg/fuzzy"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/fuzzy"
 )
 
 // App is one launchable .desktop entry.

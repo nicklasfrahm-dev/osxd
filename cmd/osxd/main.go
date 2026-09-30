@@ -22,12 +22,12 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 
-	"github.com/nicklasfrahm/osxd/pkg/apps"
 	"github.com/nicklasfrahm/osxd/pkg/config"
-	"github.com/nicklasfrahm/osxd/pkg/files"
-	"github.com/nicklasfrahm/osxd/pkg/preview"
-	"github.com/nicklasfrahm/osxd/pkg/shortcut"
-	"github.com/nicklasfrahm/osxd/pkg/web"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/apps"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/files"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/preview"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/shortcut"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/web"
 )
 
 const appID = "dev.nicklasfrahm.Osxd"
@@ -142,10 +142,19 @@ func main() {
 		fatal(err)
 	}
 
+	// The launcher brings its own styling, so pin GTK's built-in theme rather
+	// than parsing the user's: third-party themes often target newer GTK
+	// releases (e.g. color-mix() needs 4.16) and flood the log with
+	// "Theme parser error" warnings. An explicit GTK_THEME still wins.
+	if os.Getenv("GTK_THEME") == "" {
+		os.Setenv("GTK_THEME", "Adwaita:dark")
+	}
+
 	app := gtk.NewApplication(appID, gio.ApplicationFlagsNone)
 	var l *launcher
 	app.ConnectActivate(func() {
 		if l == nil {
+			gtk.WindowSetDefaultIconName(appID)
 			app.Hold() // stay resident while the window is hidden
 			var fetcher *preview.Fetcher
 			if !cfg.DisableLinkPreviews {

@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nicklasfrahm/osxd/pkg/fuzzy"
+	"github.com/nicklasfrahm/osxd/pkg/features/spotlight/fuzzy"
 )
 
 // MaxEntries caps the index so that a huge home directory cannot exhaust
