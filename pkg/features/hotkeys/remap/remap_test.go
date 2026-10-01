@@ -30,14 +30,14 @@ func TestRemap(t *testing.T) {
 			name: "copy in app",
 			mode: App,
 			in:   []Event{p(KeyLeftMeta), p(KeyC), r(KeyC), r(KeyLeftMeta)},
-			want: []Event{p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta), p(KeyC), r(KeyC), r(KeyLeftCtrl)},
+			want: []Event{p(KeyLeftCtrl), p(KeyC), r(KeyC), r(KeyLeftCtrl)},
 		},
 		{
 			name: "copy in terminal",
 			mode: Terminal,
 			in:   []Event{p(KeyLeftMeta), p(KeyC), r(KeyC), r(KeyLeftMeta)},
 			want: []Event{
-				p(KeyLeftMeta), p(KeyLeftCtrl), p(KeyLeftShift), r(KeyLeftMeta), p(KeyC),
+				p(KeyLeftCtrl), p(KeyLeftShift), p(KeyC),
 				r(KeyC), r(KeyLeftCtrl), r(KeyLeftShift),
 			},
 		},
@@ -46,7 +46,7 @@ func TestRemap(t *testing.T) {
 			mode: Terminal,
 			in:   []Event{p(KeyLeftMeta), p(KeyV), r(KeyV), r(KeyLeftMeta)},
 			want: []Event{
-				p(KeyLeftMeta), p(KeyLeftCtrl), p(KeyLeftShift), r(KeyLeftMeta), p(KeyV),
+				p(KeyLeftCtrl), p(KeyLeftShift), p(KeyV),
 				r(KeyV), r(KeyLeftCtrl), r(KeyLeftShift),
 			},
 		},
@@ -54,16 +54,13 @@ func TestRemap(t *testing.T) {
 			name: "unknown window swallows the key",
 			mode: Unknown,
 			in:   []Event{p(KeyLeftMeta), p(KeyC), {KeyC, Repeat}, r(KeyC), r(KeyLeftMeta)},
-			want: []Event{p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta), r(KeyLeftCtrl)},
+			want: nil,
 		},
 		{
 			name: "unknown window still allows other Super shortcuts",
 			mode: Unknown,
 			in:   []Event{p(KeyLeftMeta), p(KeyC), r(KeyC), p(keyLeft), r(keyLeft), r(KeyLeftMeta)},
-			want: []Event{
-				p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta),
-				p(KeyLeftMeta), r(KeyLeftCtrl), p(keyLeft), r(keyLeft), r(KeyLeftMeta),
-			},
+			want: []Event{p(KeyLeftMeta), p(keyLeft), r(keyLeft), r(KeyLeftMeta)},
 		},
 		{
 			name: "unmapped key keeps Super",
@@ -76,7 +73,7 @@ func TestRemap(t *testing.T) {
 			mode: App,
 			in:   []Event{p(KeyLeftMeta), p(KeyA), r(KeyA), p(KeyC), r(KeyC), r(KeyLeftMeta)},
 			want: []Event{
-				p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta), p(KeyA), r(KeyA),
+				p(KeyLeftCtrl), p(KeyA), r(KeyA),
 				p(KeyC), r(KeyC), r(KeyLeftCtrl),
 			},
 		},
@@ -85,7 +82,7 @@ func TestRemap(t *testing.T) {
 			mode: App,
 			in:   []Event{p(KeyLeftMeta), p(KeyC), r(KeyC), p(keyLeft), r(keyLeft), r(KeyLeftMeta)},
 			want: []Event{
-				p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta), p(KeyC), r(KeyC),
+				p(KeyLeftCtrl), p(KeyC), r(KeyC),
 				p(KeyLeftMeta), r(KeyLeftCtrl), p(keyLeft), r(keyLeft), r(KeyLeftMeta),
 			},
 		},
@@ -94,7 +91,7 @@ func TestRemap(t *testing.T) {
 			mode: App,
 			in:   []Event{p(KeyLeftMeta), p(KeyZ), r(KeyZ), p(KeyLeftShift), p(KeyZ), r(KeyZ), r(KeyLeftShift), r(KeyLeftMeta)},
 			want: []Event{
-				p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta), p(KeyZ), r(KeyZ),
+				p(KeyLeftCtrl), p(KeyZ), r(KeyZ),
 				p(KeyLeftShift), p(KeyZ), r(KeyZ), r(KeyLeftShift), r(KeyLeftCtrl),
 			},
 		},
@@ -102,13 +99,13 @@ func TestRemap(t *testing.T) {
 			name: "held Ctrl is not released",
 			mode: App,
 			in:   []Event{p(KeyLeftCtrl), p(KeyLeftMeta), p(KeyC), r(KeyC), r(KeyLeftMeta), r(KeyLeftCtrl)},
-			want: []Event{p(KeyLeftCtrl), p(KeyLeftMeta), r(KeyLeftMeta), p(KeyC), r(KeyC), r(KeyLeftCtrl)},
+			want: []Event{p(KeyLeftCtrl), p(KeyC), r(KeyC), r(KeyLeftCtrl)},
 		},
 		{
 			name: "Ctrl released during the swap stays down until Super is",
 			mode: App,
 			in:   []Event{p(KeyLeftMeta), p(KeyC), p(KeyLeftCtrl), r(KeyLeftCtrl), r(KeyC), r(KeyLeftMeta)},
-			want: []Event{p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta), p(KeyC), r(KeyC), r(KeyLeftCtrl)},
+			want: []Event{p(KeyLeftCtrl), p(KeyC), r(KeyC), r(KeyLeftCtrl)},
 		},
 		{
 			name: "plain keys pass through",
@@ -120,16 +117,33 @@ func TestRemap(t *testing.T) {
 			name: "Super does not repeat while swapped",
 			mode: App,
 			in:   []Event{p(KeyLeftMeta), p(KeyC), {KeyLeftMeta, Repeat}, {KeyC, Repeat}, r(KeyC), r(KeyLeftMeta)},
-			want: []Event{p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta), p(KeyC), {KeyC, Repeat}, r(KeyC), r(KeyLeftCtrl)},
+			want: []Event{p(KeyLeftCtrl), p(KeyC), {KeyC, Repeat}, r(KeyC), r(KeyLeftCtrl)},
 		},
 		{
 			name: "both Super keys",
 			mode: App,
 			in:   []Event{p(KeyLeftMeta), p(KeyRightMeta), p(KeyS), r(KeyS), r(KeyLeftMeta), r(KeyRightMeta)},
 			want: []Event{
-				p(KeyLeftMeta), p(KeyRightMeta), p(KeyLeftCtrl), r(KeyLeftMeta), r(KeyRightMeta),
-				p(KeyS), r(KeyS), r(KeyLeftCtrl),
+				p(KeyLeftCtrl), p(KeyS), r(KeyS), r(KeyLeftCtrl),
 			},
+		},
+		{
+			name: "Super alone is sent on release",
+			mode: App,
+			in:   []Event{p(KeyLeftMeta), {KeyLeftMeta, Repeat}, r(KeyLeftMeta)},
+			want: []Event{p(KeyLeftMeta), r(KeyLeftMeta)},
+		},
+		{
+			name: "Super with a modifier alone is dropped",
+			mode: App,
+			in:   []Event{p(KeyLeftMeta), p(KeyLeftShift), r(KeyLeftShift), r(KeyLeftMeta)},
+			want: []Event{p(KeyLeftShift), r(KeyLeftShift)},
+		},
+		{
+			name: "Super does not reach an unknown window",
+			mode: Unknown,
+			in:   []Event{p(KeyLeftMeta), p(KeyV), r(KeyV), r(KeyLeftMeta)},
+			want: nil,
 		},
 	}
 	for _, tt := range tests {
@@ -149,5 +163,39 @@ func TestModeAskedOncePerSwap(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("Mode called %d times, want 1", calls)
+	}
+}
+
+func TestFlush(t *testing.T) {
+	m := New(func() Mode { return App })
+	var out []Event
+	out = append(out, m.Process(p(KeyLeftMeta))...)
+	if !m.Pending() {
+		t.Fatal("Super is not pending after being pressed")
+	}
+	out = append(out, m.Flush()...)
+	if m.Pending() {
+		t.Fatal("Super is still pending after Flush")
+	}
+	for _, e := range []Event{p(KeyC), r(KeyC), r(KeyLeftMeta)} {
+		out = append(out, m.Process(e)...)
+	}
+	want := []Event{p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta), p(KeyC), r(KeyC), r(KeyLeftCtrl)}
+	if !reflect.DeepEqual(out, want) {
+		t.Errorf("got  %v\nwant %v", out, want)
+	}
+}
+
+func TestFlushUnknownStillBlocksOverview(t *testing.T) {
+	m := New(func() Mode { return Unknown })
+	var out []Event
+	out = append(out, m.Process(p(KeyLeftMeta))...)
+	out = append(out, m.Flush()...)
+	for _, e := range []Event{p(KeyC), r(KeyC), r(KeyLeftMeta)} {
+		out = append(out, m.Process(e)...)
+	}
+	want := []Event{p(KeyLeftMeta), p(KeyLeftCtrl), r(KeyLeftMeta), r(KeyLeftCtrl)}
+	if !reflect.DeepEqual(out, want) {
+		t.Errorf("got  %v\nwant %v", out, want)
 	}
 }

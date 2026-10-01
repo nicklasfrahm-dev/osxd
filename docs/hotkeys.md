@@ -19,7 +19,7 @@ Terminals get Ctrl+Shift because they pass plain Ctrl shortcuts to the program r
 
 Other held modifiers are kept, so Super+Shift+Z sends Ctrl+Shift+Z, which is redo in most GTK apps.
 
-Super on its own still opens the Activities overview, and Super with any other key, such as Super+Left, works as before. Holding Super, you can mix both: Super+C then Super+Left.
+osxd holds Super back until the next key shows what it is for, so neither GNOME nor the focused application ever sees Super during these shortcuts. Super on its own still opens the Activities overview (it is sent when you let go), and Super with any other key, such as Super+Left, works as before. Holding Super, you can mix both: Super+C then Super+Left.
 
 ### Settings
 
@@ -67,4 +67,6 @@ If osxd cannot open the keyboards, it logs `hotkeys disabled: …` (see `journal
 - Super+A no longer opens the app grid, Super+S no longer opens Quick Settings and Super+V no longer opens the notification list, because GNOME now sees Ctrl+A, Ctrl+S and Ctrl+V. Super+M also opens the notification list.
 - Redo is Ctrl+Y, which most editors, browsers and office suites use. Apps that only know Ctrl+Shift+Z, such as some GTK apps, need Super+Shift+Z.
 - Keyboards that also report pointer movement, such as some with a built-in touchpad, are not taken over, so their Super shortcuts are not remapped.
+- Super held on its own for more than 300 ms is sent anyway, so that Super+drag and other Super+mouse gestures keep working. A shortcut typed more slowly than that still works, but GNOME and the application see Super for a moment before it turns into Ctrl.
+- Super+Shift or Super+Ctrl pressed and released with no other key sends nothing.
 - Only 64-bit Linux is supported.
