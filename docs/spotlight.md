@@ -16,7 +16,7 @@ Long result lists scroll instead of growing the window.
 
 | Key | Action |
 | --- | --- |
-| Up / Down | Move the selection |
+| Up / Down | Move the selection; it wraps around from the last result to the first and back |
 | Enter | Open the selected result, or copy the calculator result |
 | Esc, or click away | Dismiss |
 
