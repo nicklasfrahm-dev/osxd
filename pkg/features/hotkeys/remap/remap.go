@@ -6,9 +6,16 @@
 // Ctrl+C and a terminal as Ctrl+Shift+C. Pressing any other key while Super
 // is still held swaps back, so Super+Left and friends keep working.
 //
-// Ctrl is pressed before Super is released: GNOME opens the Activities
-// overview when Super is pressed and released on its own, and any other key
-// in between cancels that.
+// Super itself is held back until the next key shows what it is for, so
+// neither GNOME nor the focused application sees it when it starts a mapped
+// shortcut. Any other key sends the held-back Super first, and so does
+// releasing Super on its own, which keeps Super opening the Activities
+// overview. The caller calls Flush once Super has been held for a while on
+// its own, so Super+drag to move windows keeps working.
+//
+// If Super has been sent by then, Ctrl is pressed before Super is released:
+// GNOME opens the Activities overview when Super is pressed and released on
+// its own, and any other key in between cancels that.
 package remap
 
 import "slices"
@@ -74,6 +81,8 @@ type Remapper struct {
 
 	in       map[uint16]bool // keys held on the physical keyboards
 	out      map[uint16]bool // keys held on the output
+	pending  bool            // Super is held but held back from the output
+	dirty    bool            // a modifier was pressed while Super was pending
 	swapped  bool            // Super is replaced by Ctrl on the output
 	swallow  bool            // mapped keys are dropped during this swap
 	injected []uint16        // modifiers pressed on the output for the swap
@@ -98,17 +107,50 @@ func isModifier(code uint16) bool {
 
 func (r *Remapper) superHeld() bool { return r.in[KeyLeftMeta] || r.in[KeyRightMeta] }
 
-// Process takes one physical key event and returns the events to emit.
-func (r *Remapper) Process(e Event) []Event {
-	var out []Event
-	emit := func(code uint16, value int32) {
+func (r *Remapper) superOut() bool { return r.out[KeyLeftMeta] || r.out[KeyRightMeta] }
+
+// emitter returns a function that appends an event to out and tracks it on
+// the output.
+func (r *Remapper) emitter(out *[]Event) func(uint16, int32) {
+	return func(code uint16, value int32) {
 		switch {
 		case value == Press && r.out[code], value != Press && !r.out[code]:
 			return // already down, or not down to release or repeat
 		}
 		r.out[code] = value != Release
-		out = append(out, Event{code, value})
+		*out = append(*out, Event{code, value})
 	}
+}
+
+// Pending reports whether Super is held but not yet sent, waiting for the
+// next key or for Flush.
+func (r *Remapper) Pending() bool { return r.pending }
+
+// Flush sends a held-back Super, for when it has been held on its own for
+// long enough that it is not starting a mapped shortcut, such as when
+// dragging a window with Super and the mouse.
+func (r *Remapper) Flush() []Event {
+	var out []Event
+	r.flush(r.emitter(&out))
+	return out
+}
+
+func (r *Remapper) flush(emit func(uint16, int32)) {
+	if !r.pending {
+		return
+	}
+	for _, s := range []uint16{KeyLeftMeta, KeyRightMeta} {
+		if r.in[s] {
+			emit(s, Press)
+		}
+	}
+	r.pending = false
+}
+
+// Process takes one physical key event and returns the events to emit.
+func (r *Remapper) Process(e Event) []Event {
+	var out []Event
+	emit := r.emitter(&out)
 
 	if e.Value == Repeat {
 		// Keys the output holds only because of the swap never repeat.
@@ -121,6 +163,18 @@ func (r *Remapper) Process(e Event) []Event {
 
 	switch {
 	case e.Value == Release:
+		if isSuper(e.Code) && r.pending {
+			if !r.superHeld() {
+				// Super on its own, or with modifiers only. Send it now so
+				// that Super alone still opens the Activities overview.
+				r.pending = false
+				if !r.dirty {
+					emit(e.Code, Press)
+					emit(e.Code, Release)
+				}
+			}
+			return out
+		}
 		if isSuper(e.Code) && r.swapped {
 			if !r.superHeld() {
 				r.unswap(emit, false)
@@ -133,8 +187,12 @@ func (r *Remapper) Process(e Event) []Event {
 		emit(e.Code, Release)
 
 	case isSuper(e.Code):
-		if !r.swapped {
+		switch {
+		case r.swapped:
+		case r.superOut():
 			emit(e.Code, Press)
+		case !r.pending:
+			r.pending, r.dirty = true, false
 		}
 
 	case Mapped[e.Code] && r.superHeld():
@@ -146,6 +204,13 @@ func (r *Remapper) Process(e Event) []Event {
 		}
 
 	default:
+		if r.pending {
+			if isModifier(e.Code) {
+				r.dirty = true // Super+Shift on its own opens nothing
+			} else {
+				r.flush(emit)
+			}
+		}
 		if r.swapped && !isModifier(e.Code) {
 			r.unswap(emit, true)
 		}
@@ -154,19 +219,23 @@ func (r *Remapper) Process(e Event) []Event {
 	return out
 }
 
-// swap replaces Super with Ctrl (and Shift in terminals) on the output. If
-// the focused window's mode is Unknown, Ctrl is still pressed, so that
-// releasing Super does not open the Activities overview, but the mapped keys
-// are swallowed until the swap ends.
+// swap replaces Super with Ctrl (and Shift in terminals) on the output. A
+// held-back Super is dropped rather than sent. If the focused window's mode
+// is Unknown, the mapped keys are swallowed until the swap ends; Ctrl is
+// then pressed only if Super was already sent, so that releasing it does not
+// open the Activities overview.
 func (r *Remapper) swap(emit func(uint16, int32)) {
 	mode := Unknown
 	if r.Mode != nil {
 		mode = r.Mode()
 	}
 	r.swallow = mode == Unknown
-	mods := []uint16{KeyLeftCtrl}
-	if mode == Terminal {
-		mods = append(mods, KeyLeftShift)
+	var mods []uint16
+	switch {
+	case mode == Terminal:
+		mods = []uint16{KeyLeftCtrl, KeyLeftShift}
+	case mode == App, r.superOut():
+		mods = []uint16{KeyLeftCtrl}
 	}
 	r.injected = r.injected[:0]
 	for _, m := range mods {
@@ -178,7 +247,7 @@ func (r *Remapper) swap(emit func(uint16, int32)) {
 	for _, s := range []uint16{KeyLeftMeta, KeyRightMeta} {
 		emit(s, Release)
 	}
-	r.swapped = true
+	r.pending, r.swapped = false, true
 }
 
 // unswap undoes swap. If restoreSuper is set, the Super keys still held are

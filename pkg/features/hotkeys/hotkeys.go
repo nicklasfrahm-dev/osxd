@@ -24,6 +24,12 @@ import (
 // later, are looked for.
 const rescanEvery = 2 * time.Second
 
+// superAlone is how long Super is held back on its own before it is sent
+// anyway, so that Super+drag and other Super+mouse gestures keep working.
+// A mapped shortcut typed more slowly than this still works, but GNOME and
+// the application then see Super briefly before it turns into Ctrl.
+const superAlone = 300 * time.Millisecond
+
 const (
 	shellSchema    = "org.gnome.shell"
 	enabledKey     = "enabled-extensions"
@@ -118,14 +124,27 @@ func Run(terminals []string) error {
 	}()
 
 	r := remap.New(mode)
-	for e := range kb.events {
-		for _, o := range r.Process(e) {
+	var flush <-chan time.Time
+	for {
+		var out []remap.Event
+		select {
+		case e := <-kb.events:
+			out = r.Process(e)
+		case <-flush:
+			out = r.Flush()
+		}
+		for _, o := range out {
 			if err := virtual.Key(o.Code, o.Value); err != nil {
 				return err
 			}
 		}
+		switch {
+		case !r.Pending():
+			flush = nil
+		case flush == nil:
+			flush = time.After(superAlone)
+		}
 	}
-	return nil
 }
 
 // keyboards are the grabbed physical keyboards. Their key events are merged
