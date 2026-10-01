@@ -678,12 +678,15 @@ func resultRow(r result) *gtk.Box {
 	return row
 }
 
+// move moves the selection by delta rows, wrapping around at either end so
+// that Up on the first result selects the last.
 func (l *launcher) move(delta int) {
 	row := l.list.SelectedRow()
-	if row == nil {
+	n := len(l.results)
+	if row == nil || n == 0 {
 		return
 	}
-	next := l.list.RowAtIndex(row.Index() + delta)
+	next := l.list.RowAtIndex(((row.Index()+delta)%n + n) % n)
 	if next == nil {
 		return
 	}
