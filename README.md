@@ -5,6 +5,7 @@ A small Go daemon that brings macOS-style features to GNOME.
 ### Features
 
 - [Spotlight](docs/spotlight.md): a launcher with fuzzy search for apps, files, websites with link previews, web searches and a calculator, opened with **Super+Space**.
+- [Hotkeys](docs/hotkeys.md): macOS-style **Super+A/C/X/V/F/Z/Y/S** for select all, copy, cut, paste, find, undo, redo and save, in every app and in terminals.
 
 ### Requirements
 
@@ -22,7 +23,7 @@ A small Go daemon that brings macOS-style features to GNOME.
 make install
 ```
 
-This builds `osxd`, installs it to `~/.local/bin`, installs its icon and a hidden desktop entry under `~/.local/share`, and installs, enables and starts a systemd user service (`osxd.service`) that runs with your graphical session. Close any copy you started by hand first, or the service exits immediately.
+This builds `osxd`, installs it to `~/.local/bin`, installs its icon, a hidden desktop entry and a GNOME Shell extension under `~/.local/share`, asks for your password to add a udev rule to `/etc/udev/rules.d` that gives you access to keyboards (for the hotkeys), and installs, enables and starts a systemd user service (`osxd.service`) that runs with your graphical session. Close any copy you started by hand first, or the service exits immediately.
 
 See each feature's documentation for first-run setup.
 
@@ -32,7 +33,7 @@ See each feature's documentation for first-run setup.
 make uninstall
 ```
 
-This runs `osxd --restore` first, which gives Super+Space back to whatever used it before (usually input-source switching) and resets the centring setting, then removes the service and binary.
+This runs `osxd --restore` first, which gives Super+Space back to whatever used it before (usually input-source switching), resets the centring setting and disables the GNOME Shell extension, then removes the service, binary, extension and udev rule.
 
 ### Development
 

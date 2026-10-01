@@ -36,6 +36,10 @@ type Config struct {
 	// DisableLinkPreviews stops the launcher from fetching a page to show a
 	// preview card when the query is a link.
 	DisableLinkPreviews bool `json:"disable_link_previews,omitempty"`
+	// DisableHotkeys turns off the Super+C style shortcuts.
+	DisableHotkeys bool `json:"disable_hotkeys,omitempty"`
+	// Terminals are extra WM classes that the hotkeys treat as terminals.
+	Terminals []string `json:"terminals,omitempty"`
 }
 
 // Path returns the location of the config file.
